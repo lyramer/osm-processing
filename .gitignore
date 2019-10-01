@@ -1,0 +1,6 @@
+db_info.py
+db_info.pyc
+victoria.osm.*
+smallvic.osm.*
+*.osm
+package-lock.json

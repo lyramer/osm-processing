@@ -1,0 +1,190 @@
+log in using
+shell> mysql -u root -p
+
+
+## ----------------------------
+## --- LOADING NEW MUNICIPALITY DATA INTO HISTORIES TABLE
+## ----------------------------
+
+## NOTE THAT THE HISTORIES TABLE IS ALREADY CREATED
+
+## ALSO NOTE THAT YOULL NEED TO REMOVE THE HEADER LINE BEFORE IMPORT
+
+## LOADING DATA. I HAD TO DO ALIASING TO GET AROUND NULL VALUES;
+## YOUR DB MAY NOT COMPLAIN LIKE MINE DID
+
+LOAD DATA INFILE '/home/andy/work/streets/HISTORIES_ESQ.tsv' 
+INTO TABLE `streets`.`HISTORIES` 
+(NAME, @VORIGIN, @VTYPE, @VOCC, @VBAND, @VESTATE, @VDISPLAY, @VSTORY, @VLINK, @VMUNICIPALITY)
+SET ORIGIN = nullif(@VORIGIN,''),
+TYPE = nullif(@VTYPE,''),
+OCC = nullif(@VOCC,''),
+BAND = nullif(@VBAND,''),
+ESTATE = nullif(@VESTATE,''),
+DISPLAY = nullif(@VDISPLAY,''),
+STORY = nullif(@VSTORY,''),
+LINK = nullif(@VLINK,''),
+MUNICIPALITY = nullif(@VMUNICIPALITY,'');
+
+
+## FIXING THE CARRIAGE RETURN TRAILING AT THE END OF MUNICIPALITY
+
+UPDATE HISTORIES SET MUNICIPALITY = REPLACE(MUNICIPALITY, '\r', '')
+where MUNICIPALITY LIKE '%\r';
+
+
+
+
+## ----------------------------
+## --- ADDING HISTORIES INTO THE VICTORIA TABLE (WITH ALL THE GEODATA)
+## ----------------------------
+
+## JUST A QUERY TO CHECK TO SEE HOW THESE GUYS JOIN.
+## I PUT THE DISPLAY FLAG IN MY HISTORY DATA SO I COULD EASILY SORT OUT 
+## WHICH ARE READY TO BE COMBINED AND WHICH HAVE ABSENT DATA
+
+SELECT 
+	h.`ORIGIN`, 
+	h.`TYPE`, 
+	h.`OCC`, 
+	h.`BAND`, 
+	h.`ESTATE`, 
+	h.`STORY`, 
+	h.`LINK`,
+	h.`MUNICIPALITY`,
+	h.`DISPLAY`
+FROM HISTORIES h
+JOIN VICTORIA v ON v.`NAME` = h.`NAME`
+WHERE 
+	h.`DISPLAY` = 1 AND
+	h.`MUNICIPALITY` LIKE 'Esquimalt';
+
+
+## NOTE THAT THERE ARE MULTIPLE ENTRIES FOR EACH ROAD IN THE OVERPASS 
+## OSM DATA SO THE HISTORIES NEEDED TO BE ATTACHED TO EACH
+## YOU COULD ALSO JOIN THOSE GEOMETRIES TOGETHER BUT THAT WOULD 
+## BE HELLA WORK
+
+UPDATE VICTORIA v
+LEFT OUTER JOIN HISTORIES h ON h.`NAME` = v.`NAME`
+SET v.`ORIGIN` = h.`ORIGIN`,
+	v.`TYPE` = h.`TYPE`,
+	v.`OCC` = h.`OCC`,
+	v.`BAND` = h.`BAND`,
+	v.`ESTATE` = h.`ESTATE`,
+	v.`STORY` = h.`STORY`,
+	v.`LINK` = h.`LINK`,
+	v.`MUNICIPALITY` = h.`MUNICIPALITY`,
+	v.`DISPLAY` = h.`DISPLAY`
+WHERE 
+	h.`DISPLAY` = 1 AND
+	h.`MUNICIPALITY` LIKE 'Esquimalt';
+
+
+
+
+## ----------------------------
+## --- CREATING THE JSON GEOMETRY OBJECT
+## ----------------------------
+
+## MINI-QUERY TO SEE THE JSON OBJECT THAT IS 'geometry'
+SELECT JSON_OBJECT('type', v.GEOTYPE, 'coordinates', v.COORDINATES)
+FROM VICTORIA v
+WHERE DISPLAY = 1 AND
+v.`MUNICIPALITY` LIKE 'Esquimalt';
+
+
+## ADDING THE JSON GEOMETRY OBJECT INTO VICTORIA
+UPDATE VICTORIA v 
+SET `JGEOMETRY` = 
+	JSON_OBJECT('type', v.GEOTYPE, 'coordinates', v.COORDINATES)
+WHERE v.`MUNICIPALITY` LIKE 'Esquimalt';
+
+
+
+
+## ----------------------------
+## --- CREATING THE JSON PROPERTIES OBJECT
+## ----------------------------
+
+## MINI-QUERY TO SEE THE JSON OBJECT THAT IS 'properties'
+SELECT JSON_OBJECT(
+	'highway', v.HIGHWAY, 
+	'name', v.NAME, 
+	'origin', v.ORIGIN,
+	'type', v.TYPE,
+	'occ', v.OCC,
+	'estate', v.ESTATE,
+	'band', v.BAND,
+	'story', v.STORY, 
+	'link', v.LINK,
+	'municipality', v.MUNICIPALITY
+	)
+FROM VICTORIA v
+WHERE DISPLAY = 1 AND v.`MUNICIPALITY` LIKE 'Esquimalt';
+
+
+## ADDING THE JSON PROPERTIES OBJECT INTO VICTORIA
+UPDATE VICTORIA v SET `JPROPERTIES` = JSON_OBJECT(
+	'highway', v.HIGHWAY, 
+	'name', v.NAME, 
+	'origin', v.ORIGIN,
+	'type', v.TYPE,
+	'occ', v.OCC,
+	'estate', v.ESTATE,
+	'band', v.BAND,
+	'story', v.STORY, 
+	'link', v.LINK,
+	'municipality', v.MUNICIPALITY
+)
+WHERE DISPLAY = 1 AND v.`MUNICIPALITY` LIKE 'Esquimalt';
+
+
+
+
+## ----------------------------
+## --- EXPORTING THE DATA
+## ----------------------------
+
+
+## NOTE THAT I EXPORTED ALL MUNICIPALITIES INTO ONE FILE FOR SIMPLICITY
+
+## MINI-QUERY TO SEE THE FULL JSON OBJECT 
+SELECT JSON_ARRAYAGG(JSON_OBJECT(
+	'type', 'Feature', 
+	'properties', v.JPROPERTIES,
+	'geometry', v.JGEOMETRY
+	))
+FROM VICTORIA v
+WHERE DISPLAY = 1;
+
+
+## this will grab everything
+
+SELECT (JSON_OBJECT(
+	'type', 'Feature', 
+	'properties', v.JPROPERTIES,
+	'geometry', v.JGEOMETRY
+	)) 
+FROM VICTORIA v
+WHERE DISPLAY = 1
+INTO OUTFILE '/home/andy/work/streets/output/data.csv'
+FIELDS TERMINATED BY ''
+ENCLOSED BY ''
+LINES TERMINATED BY ',\n';
+
+
+
+## this grabs just Esquimalt
+
+SELECT (JSON_OBJECT(
+	'type', 'Feature', 
+	'properties', v.JPROPERTIES,
+	'geometry', v.JGEOMETRY
+	)) 
+FROM VICTORIA v
+WHERE DISPLAY = 1 AND MUNICIPALITY LIKE 'Esquimalt'
+INTO OUTFILE '/home/andy/work/streets/output/esquimalt.csv'
+FIELDS TERMINATED BY ''
+ENCLOSED BY ''
+LINES TERMINATED BY ',\n';

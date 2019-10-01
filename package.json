@@ -1,0 +1,24 @@
+{
+  "name": "streets",
+  "version": "1.0.0",
+  "description": "OSM Street Processing ==========",
+  "main": "json_extract.js",
+  "dependencies": {
+    "json2csv": "^4.3.5"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "json_extract": "node json_extract.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lyramer/streets.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/lyramer/streets/issues"
+  },
+  "homepage": "https://github.com/lyramer/streets#readme"
+}
